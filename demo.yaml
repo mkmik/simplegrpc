@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: simple
+  labels:
+    app: simple
+spec:
+  ports:
+  - port: 1122
+    name: grpc
+  clusterIP: None
+  selector:
+    app: simple
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: simple
+spec:
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: simple # has to match .spec.template.metadata.labels
+  serviceName: "simple"
+  replicas: 3 # by default is 1
+  template:
+    metadata:
+      labels:
+        app: simple # has to match .spec.selector.matchLabels
+    spec:
+      containers:
+      - name: simple
+        image: gcr.io/mkm-cloud/simplegrpc-5ba8f044fc8a09ec12e224fb52bce7dd@sha256:0373daa3bbc24eac34d0cae1f533d09682094f07b2a0bcd1a7a135e3f5395e9c
+        ports:
+        - containerPort: 1122
+          name: grpc
+        env:
+        - name: SIMPLE_GRPC_ID
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name

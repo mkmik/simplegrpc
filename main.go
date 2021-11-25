@@ -47,7 +47,7 @@ func mainE() error {
 	grpc_health_v1.RegisterHealthServer(srv, hserver)
 	pb.RegisterGreeterServer(srv, &server{})
 
-	log.Printf("Serving gRPC at %q", listenAddr)
+	log.Printf("Serving id %q gRPC at %q", *id, listenAddr)
 	return srv.Serve(listener)
 }
 
