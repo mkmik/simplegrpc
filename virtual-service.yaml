@@ -1,0 +1,28 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: simple
+spec:
+  hosts:
+  - simple
+  http:
+  - match:
+    - headers:
+        org:
+          exact: "3"
+    retries:
+      attempts: 0
+    route:
+    - destination:
+        host: simple-3
+        port:
+          number: 1122
+      weight: 100
+  - retries:
+      attempts: 0
+    route:
+    - destination:
+        host: simple
+        port:
+          number: 1122
+      weight: 100
