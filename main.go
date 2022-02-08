@@ -7,8 +7,10 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/bitnami-labs/flagenv"
+	"github.com/mkmik/simplegrpc/helloworld"
 	pb "github.com/mkmik/simplegrpc/helloworld"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
@@ -20,7 +22,8 @@ import (
 )
 
 var (
-	id = flag.String("id", "", "task identifier")
+	id     = flag.String("id", "", "task identifier")
+	client = flag.String("client", "", "connect to addr")
 )
 
 func init() {
@@ -35,6 +38,9 @@ type server struct {
 // SayHello implements helloworld.GreeterServer
 func (s *server) SayHello(ctx context.Context, in *pb.HelloRequest) (*pb.HelloReply, error) {
 	log.Printf("Received: %v", in.GetName())
+
+	time.Sleep(1 * time.Second)
+
 	return &pb.HelloReply{Message: fmt.Sprintf("Hello %s from %s", in.GetName(), *id)}, nil
 }
 
@@ -47,8 +53,27 @@ func init() {
 	grpc.EnableTracing = true
 }
 
-func mainE() error {
+func clientE(addr string) error {
+	cli, err := grpc.Dial(addr, grpc.WithInsecure())
+	if err != nil {
+		return err
+	}
 
+	ctx := context.Background()
+	ctx, _ = context.WithTimeout(ctx, 500*time.Millisecond)
+
+	log.Printf("calling")
+	hello := helloworld.NewGreeterClient(cli)
+	res, err := hello.SayHello(ctx, &helloworld.HelloRequest{Name: "foo"})
+	if err != nil {
+		return err
+	}
+	log.Println(res)
+
+	return nil
+}
+
+func serverE() error {
 	log.Printf("Serving http at %q", ":2211")
 	go http.ListenAndServe(":2211", nil)
 
@@ -71,8 +96,13 @@ func mainE() error {
 
 func main() {
 	flag.Parse()
-
-	if err := mainE(); err != nil {
-		log.Fatal(err)
+	if *client != "" {
+		if err := clientE(*client); err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		if err := serverE(); err != nil {
+			log.Fatal(err)
+		}
 	}
 }
