@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/bitnami-labs/flagenv"
@@ -96,13 +97,17 @@ func serverE() error {
 
 func main() {
 	flag.Parse()
+
+	// flush the grpc binary log sink
+	defer binarylog.SetSink(nil)
+
 	if *client != "" {
 		if err := clientE(*client); err != nil {
-			log.Fatal(err)
+			fmt.Fprintf(os.Stderr, "%v\n", err)
 		}
 	} else {
 		if err := serverE(); err != nil {
-			log.Fatal(err)
+			fmt.Fprintf(os.Stderr, "%v\n", err)
 		}
 	}
 }
