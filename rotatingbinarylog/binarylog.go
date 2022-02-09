@@ -4,14 +4,17 @@ import (
 	"log"
 	"sync"
 
+	"github.com/mkmik/simplegrpc/rotatingbinarylog/internal/sink"
 	"google.golang.org/grpc/binarylog"
 	pb "google.golang.org/grpc/binarylog/grpc_binarylog_v1"
 	"google.golang.org/protobuf/proto"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 type Sink struct {
 	sync.Mutex
 
+	rotate      func() error
 	currentSink binarylog.Sink
 	currentSize uint64
 
@@ -36,11 +39,15 @@ func NewTempFileSink(opts ...NewTempFileSinkOption) (*Sink, error) {
 		o(&opt)
 	}
 
-	sink, err := binarylog.NewTempFileSink()
-	if err != nil {
-		return nil, err
+	logger := &lumberjack.Logger{
+		Filename:   "/tmp/grpcgo_binarylog.pb",
+		MaxSize:    1024 * 1024 * 1024 * 1024, // basically infinity; we want to control the rotation on a log entry boundary
+		MaxBackups: 3,
 	}
+
+	sink := sink.NewBufferedSink(logger)
 	return &Sink{
+		rotate:      logger.Rotate,
 		currentSink: sink,
 		sizeLimit:   opt.sizeLimit,
 	}, nil
@@ -56,16 +63,9 @@ func (s *Sink) Write(entry *pb.GrpcLogEntry) error {
 	s.currentSize += entrySizeEstimate
 
 	if s.sizeLimit > 0 && s.currentSize > s.sizeLimit {
-		if err := s.currentSink.Close(); err != nil {
+		log.Println("rotating binary log")
+		if err := s.rotate(); err != nil {
 			log.Println(err)
-		}
-
-		log.Println("creating new binarylog file")
-		if sink, err := binarylog.NewTempFileSink(); err != nil {
-			s.currentSink = nil
-			log.Println(err)
-		} else {
-			s.currentSink = sink
 		}
 		s.currentSize = 0
 	}
