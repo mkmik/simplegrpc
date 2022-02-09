@@ -11,6 +11,10 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
+const (
+	defaultFilename = "/tmp/grpcgo_binarylog.bin"
+)
+
 var grpclogLogger = grpclog.Component("rotatingbinarylog")
 
 type Sink struct {
@@ -27,35 +31,66 @@ type Flusher interface {
 	Flush() error
 }
 
-type NewTempFileSinkOption func(*newTmpFileSinkOptions)
+type NewSinkOption func(*newSinkOptions)
 
-type newTmpFileSinkOptions struct {
-	maxSize uint64
-	rotate  int
+type newSinkOptions struct {
+	filename string
+	maxSize  uint64
+	rotate   int
 }
 
-func WithMaxSize(maxSize uint64) NewTempFileSinkOption {
-	return func(opt *newTmpFileSinkOptions) {
+func WithFilename(filename string) NewSinkOption {
+	return func(opt *newSinkOptions) {
+		opt.filename = filename
+	}
+}
+
+func WithMaxSize(maxSize uint64) NewSinkOption {
+	return func(opt *newSinkOptions) {
 		opt.maxSize = maxSize
 	}
 }
 
-func WithRotate(rotate int) NewTempFileSinkOption {
-	return func(opt *newTmpFileSinkOptions) {
+func WithRotate(rotate int) NewSinkOption {
+	return func(opt *newSinkOptions) {
 		opt.rotate = rotate
 	}
 }
 
-func NewTempFileSink(opts ...NewTempFileSinkOption) (*Sink, error) {
-	var opt newTmpFileSinkOptions
+// NewSink creates a Sink with the provided options.
+//
+// The Sink implements binarylogger.Sink. Log entries are written to
+// a file using buffered IO. Every 60 seconds (currently non configurable) a flush is forced.
+//
+// When the file exceeds a configurable maximum size it's rotated.
+//
+// When the number of rotated files exceeds a configurable maximum number of rotated files,
+// the oldest files are deleted.
+//
+// Upon startup, it ensures that the number of old files matches the configured number of
+// rotated files; this means that files left over from a previous run are properly reclaimed.
+//
+// Upon startup, it forces the rotation of the previous active log file.
+func NewSink(opts ...NewSinkOption) (*Sink, error) {
+	var opt newSinkOptions
 	for _, o := range opts {
 		o(&opt)
 	}
+	if opt.filename == "" {
+		opt.filename = defaultFilename
+	}
 
 	logger := &lumberjack.Logger{
-		Filename:   "/tmp/grpcgo_binarylog.bin",
-		MaxSize:    1024 * 1024 * 1024 * 1024, // basically infinity; we want to control the rotation on a log entry boundary
+		Filename: opt.filename,
+		// We want to control the rotation on a log entry boundary.
+		// We will track message size and call Rotate manually when we cross the max size.
+		// We cannot set the lumberjack size to infinity so we set to a very large number.
+		MaxSize:    1024 * 1024 * 1024 * 1024,
 		MaxBackups: opt.rotate,
+	}
+
+	if err := logger.Rotate(); err != nil {
+		return nil, err
 	}
 
 	sink := sink.NewBufferedSink(logger)

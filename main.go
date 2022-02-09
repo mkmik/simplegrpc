@@ -55,7 +55,7 @@ func (s *server) SayHello(ctx context.Context, in *helloworld.HelloRequest) (*he
 }
 
 func initGRPC(sizeLimit uint64, rotate int) {
-	sink, err := rotatingbinarylog.NewTempFileSink(
+	sink, err := rotatingbinarylog.NewSink(
 		rotatingbinarylog.WithMaxSize(sizeLimit),
 		rotatingbinarylog.WithRotate(rotate),
 	)
