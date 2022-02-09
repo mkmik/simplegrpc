@@ -30,7 +30,8 @@ var (
 	client     = flag.String("client", "", "connect to addr")
 	message    = flag.String("message", "foo", "message to send")
 	iterations = flag.Int("iterations", 1000, "client iterations")
-	sizeLimit  = flag.Uint64("binary-log-size-limit", 0, "binary log size limit")
+	maxSize    = flag.Uint64("binary-log-max-size", 0, "binary log max-size")
+	rotate     = flag.Int("binary-log-rotate", 1, "Log files are rotated n times before being removed. If 0, old files are never deleted")
 )
 
 func init() {
@@ -53,8 +54,11 @@ func (s *server) SayHello(ctx context.Context, in *pb.HelloRequest) (*pb.HelloRe
 	return &pb.HelloReply{Message: fmt.Sprintf("Hello %s from %s", in.GetName(), *id)}, nil
 }
 
-func initGRPC(sizeLimit uint64) {
-	sink, err := rotatingbinarylog.NewTempFileSink(rotatingbinarylog.WithSizeLimit(sizeLimit))
+func initGRPC(sizeLimit uint64, rotate int) {
+	sink, err := rotatingbinarylog.NewTempFileSink(
+		rotatingbinarylog.WithMaxSize(sizeLimit),
+		rotatingbinarylog.WithRotate(rotate),
+	)
 	if err != nil {
 		panic(err)
 	}
@@ -133,7 +137,7 @@ func serverE() error {
 func main() {
 	flag.Parse()
 
-	initGRPC(*sizeLimit)
+	initGRPC(*maxSize, *rotate)
 
 	// flush the grpc binary log sink
 	defer binarylog.SetSink(nil)
