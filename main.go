@@ -14,9 +14,9 @@ import (
 
 	"github.com/bitnami-labs/flagenv"
 	"github.com/mkmik/simplegrpc/helloworld"
-	pb "github.com/mkmik/simplegrpc/helloworld"
 	"github.com/mkmik/simplegrpc/rotatingbinarylog"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
@@ -40,18 +40,18 @@ func init() {
 
 // server is used to implement helloworld.GreeterServer.
 type server struct {
-	pb.UnimplementedGreeterServer
+	helloworld.UnimplementedGreeterServer
 }
 
 // SayHello implements helloworld.GreeterServer
-func (s *server) SayHello(ctx context.Context, in *pb.HelloRequest) (*pb.HelloReply, error) {
+func (s *server) SayHello(ctx context.Context, in *helloworld.HelloRequest) (*helloworld.HelloReply, error) {
 	if false {
 		log.Printf("Received: %v", in.GetName())
 	}
 
 	//	time.Sleep(1 * time.Second)
 
-	return &pb.HelloReply{Message: fmt.Sprintf("Hello %s from %s", in.GetName(), *id)}, nil
+	return &helloworld.HelloReply{Message: fmt.Sprintf("Hello %s from %s", in.GetName(), *id)}, nil
 }
 
 func initGRPC(sizeLimit uint64, rotate int) {
@@ -84,7 +84,7 @@ func clientE(addr, msg string, iterations int) error {
 		log.Printf("performed %d calls", numCalls)
 	}()
 
-	cli, err := grpc.DialContext(ctx, addr, grpc.WithInsecure())
+	cli, err := grpc.DialContext(ctx, addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return err
 	}
@@ -127,7 +127,7 @@ func serverE() error {
 	hserver := health.NewServer()
 	reflection.Register(srv)
 	grpc_health_v1.RegisterHealthServer(srv, hserver)
-	pb.RegisterGreeterServer(srv, &server{})
+	helloworld.RegisterGreeterServer(srv, &server{})
 	channelz.RegisterChannelzServiceToServer(srv)
 
 	log.Printf("Serving id %q gRPC at %q", *id, listenAddr)
