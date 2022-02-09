@@ -105,8 +105,7 @@ func (s *Sink) Write(entry *pb.GrpcLogEntry) error {
 	s.Lock()
 	defer s.Unlock()
 
-	const headerSize = 4
-	entrySizeEstimate := uint64(proto.Size(entry)) + headerSize
+	entrySizeEstimate := uint64(proto.Size(entry)) + sink.HeaderSize
 
 	s.currentSize += entrySizeEstimate
 

@@ -1,4 +1,6 @@
 // copied with minimal modifications from https://github.com/grpc/grpc-go/blob/v1.44.0/binarylog/sink.go
+//
+// In particular it exposes the Flush method so we can properly rotate the binary logs.
 package sink
 
 import (
@@ -13,6 +15,8 @@ import (
 	"google.golang.org/grpc/grpclog"
 	"google.golang.org/protobuf/proto"
 )
+
+const HeaderSize = 4
 
 var grpclogLogger = grpclog.Component("binarylog")
 
@@ -36,7 +40,7 @@ func (ws *writerSink) Write(e *pb.GrpcLogEntry) error {
 		grpclogLogger.Errorf("binary logging: failed to marshal proto message: %v", err)
 		return err
 	}
-	hdr := make([]byte, 4)
+	hdr := make([]byte, HeaderSize)
 	binary.BigEndian.PutUint32(hdr, uint32(len(b)))
 	if _, err := ws.out.Write(hdr); err != nil {
 		return err
