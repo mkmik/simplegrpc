@@ -21,6 +21,10 @@ type Sink struct {
 	sizeLimit uint64
 }
 
+type Flusher interface {
+	Flush() error
+}
+
 type NewTempFileSinkOption func(*newTmpFileSinkOptions)
 
 type newTmpFileSinkOptions struct {
@@ -40,7 +44,7 @@ func NewTempFileSink(opts ...NewTempFileSinkOption) (*Sink, error) {
 	}
 
 	logger := &lumberjack.Logger{
-		Filename:   "/tmp/grpcgo_binarylog.pb",
+		Filename:   "/tmp/grpcgo_binarylog.bin",
 		MaxSize:    1024 * 1024 * 1024 * 1024, // basically infinity; we want to control the rotation on a log entry boundary
 		MaxBackups: 3,
 	}
@@ -64,6 +68,11 @@ func (s *Sink) Write(entry *pb.GrpcLogEntry) error {
 
 	if s.sizeLimit > 0 && s.currentSize > s.sizeLimit {
 		log.Println("rotating binary log")
+		if s, ok := s.currentSink.(Flusher); ok {
+			if err := s.Flush(); err != nil {
+				log.Println(err)
+			}
+		}
 		if err := s.rotate(); err != nil {
 			log.Println(err)
 		}

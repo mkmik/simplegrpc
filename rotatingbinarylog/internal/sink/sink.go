@@ -96,6 +96,13 @@ func (fs *bufferedSink) startFlushGoroutine() {
 	}()
 }
 
+// NOTE(mkm) Added so that we can flush before rotating
+func (fs *bufferedSink) Flush() error {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	return fs.buf.Flush()
+}
+
 func (fs *bufferedSink) Close() error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
