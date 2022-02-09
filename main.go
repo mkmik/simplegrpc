@@ -8,11 +8,14 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/bitnami-labs/flagenv"
 	"github.com/mkmik/simplegrpc/helloworld"
 	pb "github.com/mkmik/simplegrpc/helloworld"
+	"github.com/mkmik/simplegrpc/rotatingbinarylog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -23,8 +26,11 @@ import (
 )
 
 var (
-	id     = flag.String("id", "", "task identifier")
-	client = flag.String("client", "", "connect to addr")
+	id         = flag.String("id", "", "task identifier")
+	client     = flag.String("client", "", "connect to addr")
+	message    = flag.String("message", "foo", "message to send")
+	iterations = flag.Int("iterations", 1000, "client iterations")
+	sizeLimit  = flag.Uint64("binary-log-size-limit", 0, "binary log size limit")
 )
 
 func init() {
@@ -38,15 +44,17 @@ type server struct {
 
 // SayHello implements helloworld.GreeterServer
 func (s *server) SayHello(ctx context.Context, in *pb.HelloRequest) (*pb.HelloReply, error) {
-	log.Printf("Received: %v", in.GetName())
+	if false {
+		log.Printf("Received: %v", in.GetName())
+	}
 
-	time.Sleep(1 * time.Second)
+	//	time.Sleep(1 * time.Second)
 
 	return &pb.HelloReply{Message: fmt.Sprintf("Hello %s from %s", in.GetName(), *id)}, nil
 }
 
-func init() {
-	sink, err := binarylog.NewTempFileSink()
+func initGRPC(sizeLimit uint64) {
+	sink, err := rotatingbinarylog.NewTempFileSink(rotatingbinarylog.WithSizeLimit(sizeLimit))
 	if err != nil {
 		panic(err)
 	}
@@ -54,22 +62,49 @@ func init() {
 	grpc.EnableTracing = true
 }
 
-func clientE(addr string) error {
-	cli, err := grpc.Dial(addr, grpc.WithInsecure())
+func clientE(addr, msg string, iterations int) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		sig := <-sigs
+		log.Printf("caught signal %v\n", sig)
+		cancel()
+	}()
+
+	numCalls := 0
+	defer func() {
+		log.Printf("performed %d calls", numCalls)
+	}()
+
+	cli, err := grpc.DialContext(ctx, addr, grpc.WithInsecure())
 	if err != nil {
 		return err
 	}
 
-	ctx := context.Background()
-	ctx, _ = context.WithTimeout(ctx, 500*time.Millisecond)
+	//	ctx, _ = context.WithTimeout(ctx, 500*time.Millisecond)
 
-	log.Printf("calling")
-	hello := helloworld.NewGreeterClient(cli)
-	res, err := hello.SayHello(ctx, &helloworld.HelloRequest{Name: "foo"})
-	if err != nil {
-		return err
+	start := time.Now()
+	for i := 0; i < iterations; i++ {
+		numCalls++
+
+		if false {
+			log.Printf("calling")
+		}
+		hello := helloworld.NewGreeterClient(cli)
+		res, err := hello.SayHello(ctx, &helloworld.HelloRequest{Name: msg})
+		if err != nil {
+			return err
+		}
+		if false {
+			log.Println(res)
+		}
 	}
-	log.Println(res)
+	elapsed := time.Since(start)
+	log.Printf("elapsed: %s RPS: %f", elapsed, float64(iterations)/(float64(elapsed)/float64(time.Second)))
 
 	return nil
 }
@@ -98,11 +133,13 @@ func serverE() error {
 func main() {
 	flag.Parse()
 
+	initGRPC(*sizeLimit)
+
 	// flush the grpc binary log sink
 	defer binarylog.SetSink(nil)
 
 	if *client != "" {
-		if err := clientE(*client); err != nil {
+		if err := clientE(*client, *message, *iterations); err != nil {
 			fmt.Fprintf(os.Stderr, "%v\n", err)
 		}
 	} else {
