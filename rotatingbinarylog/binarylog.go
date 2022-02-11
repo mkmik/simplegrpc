@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	defaultFilename = "/tmp/grpcgo_binarylog.bin"
+	DefaultFilename = "/tmp/grpcgo_binarylog.bin"
 )
 
 var grpclogLogger = grpclog.Component("rotatingbinarylog")
@@ -72,12 +72,11 @@ func WithRotate(rotate int) NewSinkOption {
 //
 // Upon startup, it forces the rotation of the previous active log file.
 func NewSink(opts ...NewSinkOption) (*Sink, error) {
-	var opt newSinkOptions
+	opt := newSinkOptions{
+		filename: DefaultFilename,
+	}
 	for _, o := range opts {
 		o(&opt)
-	}
-	if opt.filename == "" {
-		opt.filename = defaultFilename
 	}
 
 	logger := &lumberjack.Logger{

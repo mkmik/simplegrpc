@@ -30,8 +30,11 @@ var (
 	client     = flag.String("client", "", "connect to addr")
 	message    = flag.String("message", "foo", "message to send")
 	iterations = flag.Int("iterations", 1000, "client iterations")
-	maxSize    = flag.Uint64("binary-log-max-size", 0, "binary log max-size")
-	rotate     = flag.Int("binary-log-rotate", 1, "Log files are rotated n times before being removed. If 0, old files are never deleted")
+
+	usebinlog = flag.Bool("binary-log-enable", true, "Enable binary log")
+	maxSize   = flag.Uint64("binary-log-max-size", 0, "binary log max-size")
+	rotate    = flag.Int("binary-log-rotate", 1, "Log files are rotated n times before being removed. If 0, old files are never deleted")
+	filename  = flag.String("binary-log-filename", rotatingbinarylog.DefaultFilename, "Binary log file name")
 )
 
 func init() {
@@ -54,15 +57,18 @@ func (s *server) SayHello(ctx context.Context, in *helloworld.HelloRequest) (*he
 	return &helloworld.HelloReply{Message: fmt.Sprintf("Hello %s from %s", in.GetName(), *id)}, nil
 }
 
-func initGRPC(sizeLimit uint64, rotate int) {
-	sink, err := rotatingbinarylog.NewSink(
-		rotatingbinarylog.WithMaxSize(sizeLimit),
-		rotatingbinarylog.WithRotate(rotate),
-	)
-	if err != nil {
-		panic(err)
+func initGRPC(usebinlog bool, filename string, sizeLimit uint64, rotate int) {
+	if usebinlog {
+		sink, err := rotatingbinarylog.NewSink(
+			rotatingbinarylog.WithFilename(filename),
+			rotatingbinarylog.WithMaxSize(sizeLimit),
+			rotatingbinarylog.WithRotate(rotate),
+		)
+		if err != nil {
+			panic(err)
+		}
+		binarylog.SetSink(sink)
 	}
-	binarylog.SetSink(sink)
 	grpc.EnableTracing = true
 }
 
@@ -137,7 +143,7 @@ func serverE() error {
 func main() {
 	flag.Parse()
 
-	initGRPC(*maxSize, *rotate)
+	initGRPC(*usebinlog, *filename, *maxSize, *rotate)
 
 	// flush the grpc binary log sink
 	defer binarylog.SetSink(nil)
