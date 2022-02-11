@@ -1,6 +1,11 @@
+// Package rotatingbinarylog implements a sink for google.golang.org/grpc/grpclog
+//
+// The sink implements a buffered file writer (based on the builtin implementation from the grpc library, with some minor modifications)
+// that can rotate files when they reach a maximum size. It also deletes old log files.
 package rotatingbinarylog
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/mkmik/simplegrpc/rotatingbinarylog/internal/sink"
@@ -12,11 +17,21 @@ import (
 )
 
 const (
+	// DefaultFilename is the default filename.
+	//
+	// We intentionally don't default to a filename that contains the PID so that when
+	// the process/container restarts it will GC the old logs, keeping the total log size at bay.
+	//
+	// If you're not using this package from a container and you may have multiple processes using this
+	// feature at the same time, a common technique is to derive the filename from the process ID:
+	//
+	//     rotatingbinarylog.WithFilename(fmt.Sprintf("/tmp/grpcgo_binarylog_%d.bin", os.Getpid()))
 	DefaultFilename = "/tmp/grpcgo_binarylog.bin"
 )
 
 var grpclogLogger = grpclog.Component("rotatingbinarylog")
 
+// Sink is a rotating binary log sink you can pass to binarylog.SetSink.
 type Sink struct {
 	sync.Mutex
 
@@ -25,36 +40,6 @@ type Sink struct {
 
 	currentSize uint64
 	maxSize     uint64
-}
-
-type Flusher interface {
-	Flush() error
-}
-
-type NewSinkOption func(*newSinkOptions)
-
-type newSinkOptions struct {
-	filename string
-	maxSize  uint64
-	rotate   int
-}
-
-func WithFilename(filename string) NewSinkOption {
-	return func(opt *newSinkOptions) {
-		opt.filename = filename
-	}
-}
-
-func WithMaxSize(maxSize uint64) NewSinkOption {
-	return func(opt *newSinkOptions) {
-		opt.maxSize = maxSize
-	}
-}
-
-func WithRotate(rotate int) NewSinkOption {
-	return func(opt *newSinkOptions) {
-		opt.rotate = rotate
-	}
 }
 
 // NewSink creates a Sink with the provided options.
@@ -89,28 +74,67 @@ func NewSink(opts ...NewSinkOption) (*Sink, error) {
 	}
 
 	if err := logger.Rotate(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("initial rotation failed: %w", err)
 	}
 
-	sink := sink.NewBufferedSink(logger)
 	return &Sink{
 		rotate:  logger.Rotate,
-		sink:    sink,
+		sink:    sink.NewBufferedSink(logger),
 		maxSize: opt.maxSize,
 	}, nil
+}
+
+type NewSinkOption func(*newSinkOptions)
+
+type newSinkOptions struct {
+	filename string
+	maxSize  uint64
+	rotate   int
+}
+
+// WithFilename defines the filename for the binary log.
+//
+// Rotated files will have a filename derived from it,
+// for example if the filename is "/tmp/grpcgo_binarylog.bin" the rotated filename will
+// "/tmp/grpcgo_binarylog_14097-2022-02-11T12-11-30.976.bin".
+func WithFilename(filename string) NewSinkOption {
+	return func(opt *newSinkOptions) {
+		opt.filename = filename
+	}
+}
+
+// WithMaxSize defines the maximum size of an individual binary log file.
+func WithMaxSize(maxSize uint64) NewSinkOption {
+	return func(opt *newSinkOptions) {
+		opt.maxSize = maxSize
+	}
+}
+
+// WithRotate defines how many rotated files to to keep.
+//
+// NOTE: the name of this config entry has its roots in the popular logrotate(8) command.
+func WithRotate(rotate int) NewSinkOption {
+	return func(opt *newSinkOptions) {
+		opt.rotate = rotate
+	}
+}
+
+// Our fork of the internal/sink package exposes the Flush method so that we can call it before rotating the file.
+// This interface allows us to access that method.
+type flusher interface {
+	Flush() error
 }
 
 func (s *Sink) Write(entry *pb.GrpcLogEntry) error {
 	s.Lock()
 	defer s.Unlock()
 
-	entrySizeEstimate := uint64(proto.Size(entry)) + sink.HeaderSize
-
-	s.currentSize += entrySizeEstimate
+	s.currentSize += uint64(proto.Size(entry)) + sink.HeaderSize
 
 	if s.maxSize > 0 && s.currentSize > s.maxSize {
 		grpclogLogger.Warningf("rotating gRPC binary log. size: %d bytes max size: %d bytes", s.currentSize, s.maxSize)
-		if s, ok := s.sink.(Flusher); ok {
+
+		if s, ok := s.sink.(flusher); ok {
 			if err := s.Flush(); err != nil {
 				grpclogLogger.Error(err)
 			}
@@ -124,5 +148,8 @@ func (s *Sink) Write(entry *pb.GrpcLogEntry) error {
 }
 
 func (s *Sink) Close() error {
-	return s.sink.Close()
+	if err := s.sink.Close(); err != nil {
+		return fmt.Errorf("closing rotatingbinarylog: %w", err)
+	}
+	return nil
 }
