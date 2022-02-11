@@ -70,7 +70,7 @@ func NewSink(opts ...NewSinkOption) (*Sink, error) {
 		// We will track message size and call Rotate manually when we cross the max size.
 		// We cannot set the lumberjack size to infinity so we set to a very large number.
 		MaxSize:    1024 * 1024 * 1024 * 1024,
-		MaxBackups: opt.rotate,
+		MaxBackups: opt.maxRotations,
 	}
 
 	if err := logger.Rotate(); err != nil {
@@ -87,9 +87,9 @@ func NewSink(opts ...NewSinkOption) (*Sink, error) {
 type NewSinkOption func(*newSinkOptions)
 
 type newSinkOptions struct {
-	filename string
-	maxSize  uint64
-	rotate   int
+	filename     string
+	maxSize      uint64
+	maxRotations int
 }
 
 // WithFilename defines the filename for the binary log.
@@ -110,12 +110,10 @@ func WithMaxSize(maxSize uint64) NewSinkOption {
 	}
 }
 
-// WithRotate defines how many rotated files to to keep.
-//
-// NOTE: the name of this config entry has its roots in the popular logrotate(8) command.
-func WithRotate(rotate int) NewSinkOption {
+// WithMaxRotations defines how many rotated files to to keep.
+func WithMaxRotations(maxRotations int) NewSinkOption {
 	return func(opt *newSinkOptions) {
-		opt.rotate = rotate
+		opt.maxRotations = maxRotations
 	}
 }
 
