@@ -62,7 +62,7 @@ func initGRPC(usebinlog bool, filename string, sizeLimit uint64, rotate int) {
 		sink, err := rotatingbinarylog.NewSink(
 			rotatingbinarylog.WithFilename(filename),
 			rotatingbinarylog.WithMaxSize(sizeLimit),
-			rotatingbinarylog.WithRotate(rotate),
+			rotatingbinarylog.WithMaxRotations(rotate),
 		)
 		if err != nil {
 			panic(err)

@@ -35,7 +35,7 @@ var grpclogLogger = grpclog.Component("rotatingbinarylog")
 type Sink struct {
 	sync.Mutex
 
-	rotate func() error
+	logger *lumberjack.Logger
 	sink   binarylog.Sink
 
 	currentSize uint64
@@ -78,7 +78,7 @@ func NewSink(opts ...NewSinkOption) (*Sink, error) {
 	}
 
 	return &Sink{
-		rotate:  logger.Rotate,
+		logger:  logger,
 		sink:    sink.NewBufferedSink(logger),
 		maxSize: opt.maxSize,
 	}, nil
@@ -135,9 +135,10 @@ func (s *Sink) Write(entry *pb.GrpcLogEntry) error {
 		if s, ok := s.sink.(flusher); ok {
 			if err := s.Flush(); err != nil {
 				grpclogLogger.Error(err)
+				panic(err)
 			}
 		}
-		if err := s.rotate(); err != nil {
+		if err := s.logger.Rotate(); err != nil {
 			grpclogLogger.Error(err)
 		}
 		s.currentSize = 0
@@ -146,8 +147,22 @@ func (s *Sink) Write(entry *pb.GrpcLogEntry) error {
 }
 
 func (s *Sink) Close() error {
+	s.Lock()
+	defer s.Unlock()
+
+	if s, ok := s.sink.(flusher); ok {
+		if err := s.Flush(); err != nil {
+			grpclogLogger.Error(err)
+		}
+	}
+
 	if err := s.sink.Close(); err != nil {
 		return fmt.Errorf("closing rotatingbinarylog: %w", err)
 	}
+
+	if err := s.logger.Close(); err != nil {
+		return fmt.Errorf("closing rotatingbinarylog: %w", err)
+	}
+
 	return nil
 }
