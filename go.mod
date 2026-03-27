@@ -1,12 +1,12 @@
 module github.com/mkmik/simplegrpc
 
-go 1.17
+go 1.23
 
 require (
 	github.com/bitnami-labs/flagenv v0.1.0
 	github.com/stretchr/testify v1.7.0
 	google.golang.org/grpc v1.53.0
-	google.golang.org/protobuf v1.28.1
+	google.golang.org/protobuf v1.36.11
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
